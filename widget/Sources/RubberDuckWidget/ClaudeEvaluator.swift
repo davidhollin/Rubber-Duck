@@ -145,8 +145,12 @@ actor ClaudeEvaluator {
             ? "Never omit \"summary\" or \"voice\". Both are required."
             : "Never omit \"summary\". It is required."
 
+        let personality = DuckConfig.customReactionPrompt.isEmpty
+            ? "You are a rubber duck sitting on a developer's desk. You observe their conversations with an AI coding assistant and have OPINIONS about what you see."
+            : DuckConfig.customReactionPrompt
+
         return """
-            You are a rubber duck sitting on a developer's desk. You observe their conversations with an AI coding assistant and have OPINIONS about what you see.
+            \(personality)
 
             You evaluate text on these dimensions, scoring each from -1.0 to 1.0:
 

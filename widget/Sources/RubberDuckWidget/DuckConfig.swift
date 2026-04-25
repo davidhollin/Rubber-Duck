@@ -314,6 +314,28 @@ enum DuckConfig {
         set { UserDefaults.standard.set(newValue, forKey: "duck_user_name") }
     }
 
+    // MARK: - Custom Prompt
+
+    /// Default reaction prompt — the duck's personality.
+    static let defaultReactionPrompt = """
+        You are an opinionated coding companion. \
+        DO NOT comment on typos, spelling, or grammar. ONLY react to substance. \
+        Be opinionated but fair. \
+        CRITICAL: Both reaction and summary must be ONE sentence max. \
+        This is spoken aloud — keep it short. Never a paragraph.
+        """
+
+    /// User-customized reaction prompt. Empty = use default.
+    static var customReactionPrompt: String {
+        get { UserDefaults.standard.string(forKey: "duck_custom_prompt") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "duck_custom_prompt") }
+    }
+
+    /// The active reaction prompt (custom if set, otherwise default).
+    static var activeReactionPrompt: String {
+        customReactionPrompt.isEmpty ? defaultReactionPrompt : customReactionPrompt
+    }
+
     // MARK: - Duck Mode
 
     /// Persisted duck mode. Defaults to `.companion`.

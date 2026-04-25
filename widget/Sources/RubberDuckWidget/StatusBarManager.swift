@@ -271,6 +271,17 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // --- Edit Prompt ---
+        let promptItem = NSMenuItem(title: "Edit Prompt...", action: #selector(editPrompt), keyEquivalent: "")
+        promptItem.target = self
+        promptItem.image = NSImage(systemSymbolName: "text.quote", accessibilityDescription: "Prompt")
+        if !DuckConfig.customReactionPrompt.isEmpty {
+            promptItem.subtitle = "Custom prompt active"
+        }
+        menu.addItem(promptItem)
+
+        menu.addItem(.separator())
+
         // --- Hide / Show Widget ---
         if AppDelegate.isWidgetHidden {
             let showItem = NSMenuItem(title: "Show Widget", action: #selector(showWidget), keyEquivalent: "")
@@ -556,6 +567,50 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
 
     @objc private func turnOffDuck() {
         AppDelegate.turnOff()
+    }
+
+    @objc private func editPrompt() {
+        NSApp.activate()
+
+        let alert = NSAlert()
+        alert.messageText = "Edit Duck Personality Prompt"
+        alert.informativeText = "This controls how the duck reacts to code. The vibe context, user name, and language are appended automatically."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Reset to Default")
+        alert.addButton(withTitle: "Cancel")
+
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 460, height: 200))
+        scrollView.hasVerticalScroller = true
+        scrollView.borderType = .bezelBorder
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: 440, height: 200))
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.string = DuckConfig.customReactionPrompt.isEmpty
+            ? DuckConfig.defaultReactionPrompt
+            : DuckConfig.customReactionPrompt
+
+        scrollView.documentView = textView
+        alert.accessoryView = scrollView
+        alert.window.initialFirstResponder = textView
+
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            // Save
+            let text = textView.string.trimmingCharacters(in: .whitespacesAndNewlines)
+            DuckConfig.customReactionPrompt = text
+            DuckLog.log("[prompt] Custom prompt saved (\(text.count) chars)")
+        } else if response == .alertSecondButtonReturn {
+            // Reset to Default
+            DuckConfig.customReactionPrompt = ""
+            DuckLog.log("[prompt] Reset to default prompt")
+        }
+        // Cancel — do nothing
     }
 
     @objc private func hideWidget() {

@@ -37,6 +37,7 @@ bundle: build icon
 	@cp -R $(BUILD_DIR)/$(EXECUTABLE)_$(EXECUTABLE).bundle $(RESOURCES_DIR)/
 	@rm -rf $(RESOURCES_DIR)/plugin
 	@cp -R ../plugin $(RESOURCES_DIR)/plugin
+	@xattr -cr $(APP_BUNDLE)
 	@codesign --force --deep --sign - $(APP_BUNDLE)
 	@echo "✅ Built $(APP_BUNDLE)"
 
