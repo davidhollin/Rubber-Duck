@@ -308,7 +308,9 @@ class SpeechService: ObservableObject {
         switch newPath {
         case .esp32Serial:
             if let mic = serialMic { activeSTT = mic }
-            if let ttsEngine = serialTTS { activeTTS = ttsEngine }
+            // Prefer Kokoro (plays through Mac speakers) over serial AVSpeechSynthesizer
+            if let kokoro = kokoroTTS { activeTTS = kokoro }
+            else if let ttsEngine = serialTTS { activeTTS = ttsEngine }
             selectedMicName = serialTransport?.displayName ?? "Duck, Duck, Duck"
         case .teensy:
             activeSTT = stt
@@ -664,7 +666,7 @@ class SpeechService: ObservableObject {
         isSpeaking = true
 
         let systemMuted = audioPath == .local && AudioDeviceDiscovery.isSystemOutputMuted()
-        let kokoroUnavailable = kokoroTTS != nil && !isKokoroReady && audioPath != .esp32Serial
+        let kokoroUnavailable = kokoroTTS != nil && !isKokoroReady
         if isSilent || systemMuted || kokoroUnavailable {
             let duration = estimatedSpeechDuration(for: speech.text)
             simulatedSpeechTask = Task {
