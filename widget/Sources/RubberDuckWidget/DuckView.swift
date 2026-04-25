@@ -46,6 +46,7 @@ private let volumePresets: [(label: String, value: Float)] = [
 private struct DuckContextMenu: View {
     @EnvironmentObject var coordinator: DuckCoordinator
     @EnvironmentObject var speechService: SpeechService
+    @EnvironmentObject var serialManager: SerialManager
     @EnvironmentObject var duckServer: DuckServer
 
     var body: some View {
@@ -104,6 +105,7 @@ private struct DuckContextMenu: View {
                 Button {
                     DuckConfig.volume = preset.value
                     speechService.setVolume(preset.value)
+                    serialManager.sendCommand(String(format: "VOL,%.2f", preset.value))
                 } label: {
                     let current = DuckConfig.volume
                     let isActive = abs(current - preset.value) < 0.01

@@ -9,13 +9,13 @@ static let cornerRadius: CGFloat = 18
     static let eyeSize: CGFloat = 10
     static let eyeSpacing: CGFloat = 46
 
-    // Duck palette — accent #ECB947, background #ECEA6E, eyes #4C2016
-    /// The duck orange — official app accent color #E69F24.
-    static let accent = Color(red: 0.902, green: 0.624, blue: 0.141)
-    /// Widget background tint — lighter yellow #ECEA6E
-    static let backgroundColor = Color(red: 0.926, green: 0.918, blue: 0.431)
+    // Duck palette — warm white body, golden-yellow accent (beak/feet)
+    /// Accent color — warm golden yellow matching the beak.
+    static let accent = Color(red: 0.95, green: 0.78, blue: 0.22)
+    /// Widget background tint — slightly warm cream
+    static let backgroundColor = Color(red: 0.95, green: 0.92, blue: 0.86)
     static let bodyColor = backgroundColor
-    static let bodyColorDark = Color(red: 0.895, green: 0.695, blue: 0.248) // subtle shade only
+    static let bodyColorDark = Color(red: 0.91, green: 0.88, blue: 0.82)
     static let bodyOpacity: Double = 0.75  // Yellow tint over glass — lets desktop bleed through
     static let eyeColor = Color.black
     static let cheekColor = Color(red: 1.0, green: 0.6, blue: 0.4).opacity(0.4)

@@ -271,6 +271,19 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        // --- Hide / Show Widget ---
+        if AppDelegate.isWidgetHidden {
+            let showItem = NSMenuItem(title: "Show Widget", action: #selector(showWidget), keyEquivalent: "")
+            showItem.target = self
+            showItem.image = NSImage(systemSymbolName: "eye", accessibilityDescription: "Show")
+            menu.addItem(showItem)
+        } else {
+            let hideItem = NSMenuItem(title: "Hide Widget", action: #selector(hideWidget), keyEquivalent: "")
+            hideItem.target = self
+            hideItem.image = NSImage(systemSymbolName: "eye.slash", accessibilityDescription: "Hide")
+            menu.addItem(hideItem)
+        }
+
         // --- Pause / Resume ---
         if AppDelegate.isDuckActive {
             let pauseItem = NSMenuItem(title: "Pause", action: #selector(turnOffDuck), keyEquivalent: "")
@@ -543,6 +556,14 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
 
     @objc private func turnOffDuck() {
         AppDelegate.turnOff()
+    }
+
+    @objc private func hideWidget() {
+        AppDelegate.hideWidget()
+    }
+
+    @objc private func showWidget() {
+        AppDelegate.showWidget()
     }
 
     @objc private func quitApp() {

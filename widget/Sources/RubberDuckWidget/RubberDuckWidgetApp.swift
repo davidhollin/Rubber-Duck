@@ -732,6 +732,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     static func turnOn() {
         guard !isDuckActive else { return }
         isDuckActive = true
+        if !isWidgetHidden { duckWindow?.orderFront(nil) }
         speechService?.applyListenMode()
         DuckLog.log("[app] Duck Duck Duck turned on")
     }
@@ -745,6 +746,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         speechService?.stopSpeaking(reason: .userCancelled)
         coordinator?.clearThinking()
         DuckLog.log("[app] Duck Duck Duck turned off")
+    }
+
+    // MARK: - Widget Visibility
+
+    /// Whether the floating widget window is hidden (audio/eval still active).
+    static var isWidgetHidden: Bool = false
+
+    @MainActor
+    static func hideWidget() {
+        isWidgetHidden = true
+        duckWindow?.orderOut(nil)
+        DuckLog.log("[app] Widget hidden")
+    }
+
+    @MainActor
+    static func showWidget() {
+        isWidgetHidden = false
+        duckWindow?.orderFront(nil)
+        DuckLog.log("[app] Widget shown")
     }
 
 }

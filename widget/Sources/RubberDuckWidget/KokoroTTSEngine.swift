@@ -281,8 +281,6 @@ class KokoroTTSEngine {
             return
         }
 
-        let vol = volume
-        _ = vol  // captured for potential future use
         let engine = self
         streamingTask = Task.detached {
             // Enter audio mode on ESP32

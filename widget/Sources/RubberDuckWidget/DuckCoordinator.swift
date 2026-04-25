@@ -84,10 +84,12 @@ class DuckCoordinator: ObservableObject {
         // Don't auto-clear here — evals from other sessions would wipe pending permissions.
         serialManager.sendCommand("P,0")
 
-        // Send to duck via serial
-        if let scores = evalService.scores {
-            serialManager.sendScores(scores, source: evalService.source)
-        }
+        // Send scores to hardware — skip when Kokoro handles TTS to avoid chirp collision.
+        // Servo still moves for permissions (P,1/P,0 commands).
+        // TODO: Add firmware MUTE_CHIRP command so we can send scores without chirps.
+        // if let scores = evalService.scores {
+        //     serialManager.sendScores(scores, source: evalService.source)
+        // }
 
         // Speak based on current mode (permissionsOnly exits early above)
         // Relay mode: only speak Claude's output, not the user's (you know what you said)
