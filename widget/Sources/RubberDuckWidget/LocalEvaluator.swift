@@ -191,8 +191,8 @@ actor LocalEvaluator {
         let isUser = source == "user"
 
         // Pass 2: Generate reaction with sentiment context
-        let perspective = isUser ? "They (the user)" : "I (the coding assistant)"
-        let nameContext = DuckConfig.userName.isEmpty ? "" : " The developer's name is \(DuckConfig.userName) — use it sometimes in the summary."
+        let perspective = isUser ? "You (the developer)" : "I (the coding assistant)"
+        let nameContext = DuckConfig.userName.isEmpty ? "" : " The developer's name is \(DuckConfig.userName) — use it occasionally."
         let reactionPrompt = """
             \(DuckConfig.activeReactionPrompt) \
             The overall vibe is \(vibe). Your reaction MUST match this vibe. \

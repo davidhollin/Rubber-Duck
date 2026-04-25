@@ -359,8 +359,12 @@ struct RubberDuckWidgetApp: App {
             speech?.handleSerialDeviceChange()
             if serial?.isConnected == true {
                 AppDelegate.turnOn()
+                AppDelegate.hideWidget()
                 // Send persisted volume to firmware on connect
                 serial?.sendCommand(String(format: "VOL,%.2f", DuckConfig.volume))
+            } else {
+                // Hardware unplugged — show widget as fallback
+                AppDelegate.showWidget()
             }
         }
 

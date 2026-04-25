@@ -136,7 +136,7 @@ actor ClaudeEvaluator {
               "voice": "<voice key from the list above>"
             """ : ""
 
-        let nameSection = DuckConfig.userName.isEmpty ? "" : "\n            The developer's name is \(DuckConfig.userName)."
+        let nameSection = DuckConfig.userName.isEmpty ? "" : "\n            The developer's name is \(DuckConfig.userName). Use their name occasionally instead of \"you\"."
         let langSection = ""  // Translation handled by KokoroTTSEngine via Apple Translation
 
         let keyCount = wildcardEnabled ? "8" : "7"
@@ -157,7 +157,7 @@ actor ClaudeEvaluator {
             \(dimText)
 
             You provide TWO text outputs. BOTH must be ONE sentence max. This is spoken aloud — brevity is everything.
-            1. "reaction" — max 10 words. ONE sentence. You are Claude's INNER MONOLOGUE thinking out loud. Use "I" for Claude's own work and "they" for the user. When source is "claude", you're critiquing your own output: "Not my finest work", "I crushed that one", "I probably shouldn't have done that". When source is "user", you're reacting to what they asked: "They want me to WHAT?", "Oh they're testing me now", "Now THAT'S a fun problem". Never say "you" (that's the summary's job). NEVER more than one sentence.
+            1. "reaction" — max 10 words. ONE sentence. You are Claude's INNER MONOLOGUE thinking out loud. Use "I" for Claude's own work and "you" for the user. When source is "claude", you're critiquing your own output: "Not my finest work", "I crushed that one", "I probably shouldn't have done that". When source is "user", you're reacting to what you were asked: "You want me to WHAT?", "Oh you're testing me now", "Now THAT'S a fun problem". NEVER more than one sentence.
             2. "summary" — ONE short sentence, max 15 words, spoken DIRECTLY TO THE DEVELOPER. Use "you" for the developer, "it" or "Claude" for the AI assistant. Be judgy. Say only what matters. If there's a permission request or question for the user, that's the MOST important thing. Examples: "It rewrote your auth, pretty clean", "Hey, it's asking you Redis or Postgres", "Heads up, it wants to delete your test fixtures". NEVER more than one sentence. NEVER a paragraph.\(nameSection)\(langSection)
             \(voiceSection)
             Respond ONLY with valid JSON. You MUST include ALL \(keyCount) keys — the 5 scores\(extraKeys):
