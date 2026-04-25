@@ -84,49 +84,18 @@ private struct DuckContextMenu: View {
             Label(coordinator.mode.label, systemImage: coordinator.mode.iconName)
         }
 
-        // Voice picker
-        Menu {
-            Button {
-                speechService.ttsVoice = DuckVoices.wildcardSayName
-                speechService.scheduleSpeech(
-                    "Wildcard mode. I'll pick a voice each time.",
-                    kind: .preview,
-                    lane: .manual,
-                    policy: .latestWins,
-                    interruptibility: .freelyInterruptible,
-                    skipChirpWait: true
-                )
-            } label: {
-                let active = speechService.isWildcardMode
-                Label(active ? "✓ Wildcard (AI picks)" : "Wildcard (AI picks)", systemImage: "shuffle")
-            }
-
-            Divider()
-
-            ForEach([DuckVoices.main, DuckVoices.classic, DuckVoices.specialFX, DuckVoices.british].indices, id: \.self) { groupIdx in
-                if groupIdx > 0 { Divider() }
-                ForEach([DuckVoices.main, DuckVoices.classic, DuckVoices.specialFX, DuckVoices.british][groupIdx], id: \.sayName) { voice in
-                    Button {
-                        speechService.ttsVoice = voice.sayName
-                        speechService.scheduleSpeech(
-                            voice.preview,
-                            kind: .preview,
-                            lane: .manual,
-                            scopeID: "voice-preview",
-                            policy: .latestWins,
-                            interruptibility: .freelyInterruptible,
-                            skipChirpWait: true
-                        )
-                    } label: {
-                        Text(speechService.ttsVoice == voice.sayName && !speechService.isWildcardMode ? "✓ \(voice.label)" : voice.label)
-                    }
-                }
+        // Silent mode toggle
+        Button {
+            if speechService.isSilent {
+                speechService.ttsVoice = "kokoro"
+            } else {
+                speechService.ttsVoice = DuckVoices.silentSayName
             }
         } label: {
-            let voiceLabel = speechService.isWildcardMode
-                ? "Wildcard"
-                : (DuckVoices.all.first { $0.sayName == speechService.ttsVoice }?.label ?? speechService.ttsVoice)
-            Label("Voice: \(voiceLabel)", systemImage: "waveform")
+            Label(
+                speechService.isSilent ? "✓ Silent Mode" : "Silent Mode",
+                systemImage: "text.bubble"
+            )
         }
 
         // Volume picker

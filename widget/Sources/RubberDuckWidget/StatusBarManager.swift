@@ -14,14 +14,17 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
     private let coordinator: DuckCoordinator
     private let serialManager: SerialManager
     private let duckServer: DuckServer
+    private weak var kokoroManager: KokoroManager?
     var updateChecker: UpdateChecker?
 
     init(speechService: SpeechService, coordinator: DuckCoordinator,
-         serialManager: SerialManager, duckServer: DuckServer) {
+         serialManager: SerialManager, duckServer: DuckServer,
+         kokoroManager: KokoroManager? = nil) {
         self.speechService = speechService
         self.coordinator = coordinator
         self.serialManager = serialManager
         self.duckServer = duckServer
+        self.kokoroManager = kokoroManager
         super.init()
         setupStatusItem()
     }
@@ -151,37 +154,33 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
         modeItem.submenu = modeMenu
         menu.addItem(modeItem)
 
-        // --- Voice submenu ---
-        let isWildcard = speechService.isWildcardMode
-        let isSilentVoice = speechService.isSilent
-        let voiceLabel = isSilentVoice ? "Silent" : isWildcard ? "Wildcard" : (DuckVoices.all.first { $0.sayName == speechService.ttsVoice }?.label ?? speechService.ttsVoice)
-        let voiceItem = NSMenuItem(title: "Voice: \(voiceLabel)", action: nil, keyEquivalent: "")
+        // --- Voice / Kokoro status ---
+        let kokoroStatus = kokoroManager?.status ?? .notConfigured
+        let voiceItem = NSMenuItem(
+            title: "Voice: Kokoro",
+            action: nil,
+            keyEquivalent: ""
+        )
         voiceItem.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "Voice")
+        if !kokoroStatus.isUsable {
+            voiceItem.subtitle = kokoroStatus.label
+        }
         let voiceMenu = NSMenu()
 
-        let isSilent = speechService.isSilent
-        let silentItem = NSMenuItem(title: "Silent Voice", action: #selector(selectSilent), keyEquivalent: "")
+        let kokoroItem = NSMenuItem(title: "Kokoro", action: nil, keyEquivalent: "")
+        kokoroItem.image = NSImage(systemSymbolName: "waveform.badge.magnifyingglass", accessibilityDescription: "Kokoro")
+        kokoroItem.subtitle = kokoroStatus.label
+        kokoroItem.state = !speechService.isSilent ? .on : .off
+        kokoroItem.isEnabled = false
+        voiceMenu.addItem(kokoroItem)
+
+        let silentItem = NSMenuItem(title: "Silent", action: #selector(selectSilent), keyEquivalent: "")
         silentItem.target = self
         silentItem.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: "Speech bubble only")
-        silentItem.subtitle = "Subtitles and quacks, no voice"
-        silentItem.state = isSilent ? .on : .off
+        silentItem.subtitle = "Speech bubbles only, no voice"
+        silentItem.state = speechService.isSilent ? .on : .off
         voiceMenu.addItem(silentItem)
 
-        let wildcardItem = NSMenuItem(title: "Wildcard", action: #selector(selectWildcard), keyEquivalent: "")
-        wildcardItem.target = self
-        wildcardItem.image = NSImage(systemSymbolName: "shuffle", accessibilityDescription: "Shuffle voices")
-        wildcardItem.subtitle = "AI picks a voice to match the mood"
-        wildcardItem.state = isWildcard ? .on : .off
-        voiceMenu.addItem(wildcardItem)
-        voiceMenu.addItem(.separator())
-
-        addVoiceItems(to: voiceMenu, voices: DuckVoices.main)
-        voiceMenu.addItem(.separator())
-        addVoiceItems(to: voiceMenu, voices: DuckVoices.classic)
-        voiceMenu.addItem(.separator())
-        addVoiceItems(to: voiceMenu, voices: DuckVoices.british)
-        voiceMenu.addItem(.separator())
-        addVoiceItems(to: voiceMenu, voices: DuckVoices.specialFX)
         voiceItem.submenu = voiceMenu
         menu.addItem(voiceItem)
 
@@ -388,20 +387,6 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
         serialManager.sendCommand(String(format: "VOL,%.2f", vol))
     }
 
-    // MARK: - Voice Submenu
-
-    private func addVoiceItems(to menu: NSMenu, voices: [DuckVoice]) {
-        for voice in voices {
-            let voiceItem = NSMenuItem(title: voice.label, action: #selector(selectVoice(_:)), keyEquivalent: "")
-            voiceItem.target = self
-            voiceItem.representedObject = voice.sayName
-            if speechService.ttsVoice == voice.sayName {
-                voiceItem.state = .on
-            }
-            menu.addItem(voiceItem)
-        }
-    }
-
     // MARK: - Actions
 
     @objc private func toggleSubtitles() {
@@ -508,47 +493,30 @@ final class StatusBarManager: NSObject, NSMenuDelegate {
         DuckConfig.evalProvider = .foundation
     }
 
-    @objc private func selectWildcard() {
-        speechService.ttsVoice = DuckVoices.wildcardSayName
-        // Preview in Superstar (the default wildcard voice)
-        speechService.setVoiceTransient(DuckVoices.wildcardDefault.sayName)
-        speechService.scheduleSpeech(
-            "Wildcard mode.",
-            kind: .preview,
-            lane: .manual,
-            scopeID: "voice-preview",
-            policy: .latestWins,
-            interruptibility: .freelyInterruptible,
-            skipChirpWait: true
-        )
-    }
-
     @objc private func selectSilent() {
-        speechService.ttsVoice = DuckVoices.silentSayName
-        // This triggers the speech bubble since isSilent is now true
-        speechService.scheduleSpeech(
-            "Silent mode. I'll use speech bubbles instead.",
-            kind: .preview,
-            lane: .manual,
-            scopeID: "voice-preview",
-            policy: .latestWins,
-            interruptibility: .freelyInterruptible
-        )
-    }
-
-    @objc private func selectVoice(_ sender: NSMenuItem) {
-        guard let sayName = sender.representedObject as? String else { return }
-        speechService.ttsVoice = sayName
-        let voice = DuckVoices.all.first { $0.sayName == sayName }
-        speechService.scheduleSpeech(
-            voice?.preview ?? "This is how I sound.",
-            kind: .preview,
-            lane: .manual,
-            scopeID: "voice-preview",
-            policy: .latestWins,
-            interruptibility: .freelyInterruptible,
-            skipChirpWait: true
-        )
+        if speechService.isSilent {
+            // Toggle back to Kokoro
+            speechService.ttsVoice = "kokoro"
+            speechService.scheduleSpeech(
+                "Voice on.",
+                kind: .preview,
+                lane: .manual,
+                scopeID: "voice-preview",
+                policy: .latestWins,
+                interruptibility: .freelyInterruptible,
+                skipChirpWait: true
+            )
+        } else {
+            speechService.ttsVoice = DuckVoices.silentSayName
+            speechService.scheduleSpeech(
+                "Silent mode. I'll use speech bubbles instead.",
+                kind: .preview,
+                lane: .manual,
+                scopeID: "voice-preview",
+                policy: .latestWins,
+                interruptibility: .freelyInterruptible
+            )
+        }
     }
 
     @objc private func setLaunchAtLogin() {

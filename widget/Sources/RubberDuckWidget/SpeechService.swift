@@ -114,23 +114,10 @@ class SpeechService: ObservableObject {
 
     // Config
     var wakeWord: String = "ducky" { didSet { wakeWordProcessor.wakeWord = wakeWord } }
-    @Published var ttsVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.wildcardSayName {
+    @Published var ttsVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.silentSayName {
         didSet {
-            let engineVoice = DuckVoices.resolvedSayName(for: ttsVoice)
-            tts.voice = engineVoice
-            serialTTS?.voice = engineVoice
             UserDefaults.standard.set(ttsVoice, forKey: "duck_tts_voice")
         }
-    }
-
-    /// Whether Wildcard mode is active (AI picks voice per utterance).
-    var isWildcardMode: Bool { ttsVoice == DuckVoices.wildcardSayName }
-
-    /// Set voice on the active TTS engine for one utterance, without persisting to UserDefaults.
-    /// Used by Wildcard mode to swap voices per-eval.
-    func setVoiceTransient(_ sayName: String) {
-        tts.voice = sayName
-        serialTTS?.voice = sayName
     }
 
     // Callbacks
@@ -148,7 +135,9 @@ class SpeechService: ObservableObject {
 
     // Concrete engines (kept for device-specific operations like setTeensyDevice)
     private let stt: STTEngine
-    private let tts: TTSEngine
+    private let tts: TTSEngine  // Legacy — kept for serial voice + gate init fallback
+    private var kokoroTTS: KokoroTTSEngine?
+    private weak var kokoroManager: KokoroManager?
     private var serialMic: SerialMicEngine?
     private var serialTTS: SerialTTSEngine?
     private weak var serialTransport: SerialTransport?
@@ -195,8 +184,8 @@ class SpeechService: ObservableObject {
         activeSTT = stt
         activeTTS = tts
 
-        // Sync persisted voice to TTSEngine (didSet doesn't fire on init).
-        tts.voice = DuckVoices.resolvedSayName(for: ttsVoice)
+        // Sync persisted voice to TTSEngine (legacy fallback for serial path).
+        tts.voice = DuckConfig.ttsVoice
 
         // Wire STT transcripts to our processing pipeline
         stt.onTranscript = { [weak self] transcript, isFinal in
@@ -226,9 +215,9 @@ class SpeechService: ObservableObject {
     func setSerialTransport(_ transport: SerialTransport) {
         self.serialTransport = transport
 
-        // Create serial TTS engine — resolve wildcard sentinel to real voice name
+        // Create serial TTS engine
         let sTTS = SerialTTSEngine(transport: transport)
-        sTTS.voice = DuckVoices.resolvedSayName(for: ttsVoice)
+        sTTS.voice = DuckConfig.ttsVoice
         self.serialTTS = sTTS
 
         // Create serial mic engine — wire transcripts to same pipeline
@@ -243,6 +232,32 @@ class SpeechService: ObservableObject {
         self.serialMic = sMic
 
         log("[speech] Serial audio engines created for ESP32")
+    }
+
+    // MARK: - Kokoro TTS
+
+    /// Wire the Kokoro sidecar manager. Creates KokoroTTSEngine and sets it
+    /// as the active TTS backend for local/Teensy audio paths.
+    func setKokoroManager(_ manager: KokoroManager) {
+        self.kokoroManager = manager
+        let kokoro = KokoroTTSEngine(manager: manager)
+        kokoro.volume = DuckConfig.volume
+        self.kokoroTTS = kokoro
+
+        // Use Kokoro for local/Teensy paths (ESP32 serial keeps its own engine)
+        if audioPath != .esp32Serial {
+            activeTTS = kokoro
+        }
+
+        // Share Kokoro's TTS gate with STT so mic mutes during Kokoro playback
+        stt.setTTSGate(kokoro.gate)
+
+        log("[speech] Kokoro TTS engine wired")
+    }
+
+    /// Whether Kokoro is ready to synthesize speech.
+    private var isKokoroReady: Bool {
+        kokoroManager?.status.isUsable ?? false
     }
 
     /// Called when the serial device connects, disconnects, or identifies itself.
@@ -297,13 +312,13 @@ class SpeechService: ObservableObject {
             selectedMicName = serialTransport?.displayName ?? "Duck, Duck, Duck"
         case .teensy:
             activeSTT = stt
-            activeTTS = tts
+            activeTTS = kokoroTTS ?? tts
             if let device = AudioDeviceDiscovery.findDuckDevice() {
                 selectedMicName = device.name
             }
         case .local:
             activeSTT = stt
-            activeTTS = tts
+            activeTTS = kokoroTTS ?? tts
             selectMicrophone()
         }
 
@@ -649,7 +664,8 @@ class SpeechService: ObservableObject {
         isSpeaking = true
 
         let systemMuted = audioPath == .local && AudioDeviceDiscovery.isSystemOutputMuted()
-        if isSilent || systemMuted {
+        let kokoroUnavailable = kokoroTTS != nil && !isKokoroReady && audioPath != .esp32Serial
+        if isSilent || systemMuted || kokoroUnavailable {
             let duration = estimatedSpeechDuration(for: speech.text)
             simulatedSpeechTask = Task {
                 try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
@@ -721,9 +737,10 @@ class SpeechService: ObservableObject {
         currentTurnScopeID = nil
     }
 
-    /// Set master volume (0.0–1.0). Propagates to both TTS engines.
+    /// Set master volume (0.0–1.0). Propagates to all TTS engines.
     func setVolume(_ volume: Float) {
         tts.volume = volume
+        kokoroTTS?.volume = volume
         serialTTS?.volume = volume
     }
 
@@ -796,6 +813,7 @@ class SpeechService: ObservableObject {
         audioPath = .local
         stt.clearTeensyDevice()
         tts.outputDeviceName = nil
+        kokoroTTS?.outputDeviceName = nil
         log("[speech] User selected mic: \(mic.name)")
     }
 
@@ -820,7 +838,9 @@ class SpeechService: ObservableObject {
             if let device = AudioDeviceDiscovery.findDuckDevice() {
                 stt.setTeensyDevice(device.deviceID)
                 tts.outputDeviceName = device.name
+                kokoroTTS?.outputDeviceName = device.name
                 tts.volume = DuckConfig.volume  // Apply persisted volume to device
+                kokoroTTS?.volume = DuckConfig.volume
                 audioPath = .teensy  // TBD: distinguish Teensy vs S3 UAC when UAC works
                 log("[speech] Selected duck UAC mic: \(device.name)")
                 log("[tts] Will route TTS to \(device.name) via `say -a`")
@@ -830,6 +850,7 @@ class SpeechService: ObservableObject {
             // Ensure STT/TTS use system defaults
             stt.clearTeensyDevice()
             tts.outputDeviceName = nil
+        kokoroTTS?.outputDeviceName = nil
             log("[speech] Selected default mic: \(mic.name)")
         }
     }
@@ -866,6 +887,7 @@ class SpeechService: ObservableObject {
             log("[speech] Duck UAC device unplugged — switching to local mic + speakers")
             stt.clearTeensyDevice()
             tts.outputDeviceName = nil
+        kokoroTTS?.outputDeviceName = nil
             selectMicrophone()
 
             if isListening {

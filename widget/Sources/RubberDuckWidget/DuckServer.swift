@@ -122,7 +122,6 @@ class DuckServer: ObservableObject {
             }
 
             let scores: EvalScores
-            let wildcardOn = DuckVoices.isWildcardPersisted
             let provider = DuckConfig.evalProvider
 
             do {
@@ -130,18 +129,15 @@ class DuckServer: ObservableObject {
                 case .foundation:
                     scores = try await localEvaluator.evaluate(text: text, source: source,
                                                                 userContext: userContext,
-                                                                claudeContext: claudeContext,
-                                                                wildcardEnabled: wildcardOn)
+                                                                claudeContext: claudeContext)
                 case .anthropic:
                     scores = try await claudeEvaluator.evaluate(text: text, source: source,
                                                                  userContext: userContext,
-                                                                 claudeContext: claudeContext,
-                                                                 wildcardEnabled: wildcardOn)
+                                                                 claudeContext: claudeContext)
                 case .gemini:
                     scores = try await geminiEvaluator.evaluate(text: text, source: source,
                                                                 userContext: userContext,
-                                                                claudeContext: claudeContext,
-                                                                wildcardEnabled: wildcardOn)
+                                                                claudeContext: claudeContext)
                 }
             } catch {
                 let providerName = provider == .anthropic ? "Haiku" : provider == .gemini ? "Gemini" : "Foundation"

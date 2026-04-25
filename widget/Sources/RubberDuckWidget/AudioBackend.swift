@@ -47,3 +47,5 @@ extension SerialMicEngine: STTBackend {}
 extension TTSEngine: TTSBackend {}
 
 extension SerialTTSEngine: TTSBackend {}
+
+extension KokoroTTSEngine: TTSBackend {}

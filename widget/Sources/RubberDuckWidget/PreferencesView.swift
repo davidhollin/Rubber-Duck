@@ -263,7 +263,7 @@ private struct BehaviorPane: View {
     @EnvironmentObject var coordinator: DuckCoordinator
 
     @State private var selectedMode: DuckMode = DuckConfig.duckMode
-    @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.wildcardSayName
+    @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.silentSayName
     @State private var volume: Float = DuckConfig.volume
     @State private var selectedMic: String = ""
     @State private var availableMics: [(index: Int, name: String)] = []
@@ -307,31 +307,12 @@ private struct BehaviorPane: View {
             // --- Sound ---
             Section("Sound") {
                 Picker("Voice", selection: $selectedVoice) {
-                    Text("Wildcard (AI picks)").tag(DuckVoices.wildcardSayName)
+                    Text("Kokoro").tag("kokoro")
                     Text("Silent (speech bubbles)").tag(DuckVoices.silentSayName)
-                    Divider()
-                    ForEach(DuckVoices.main, id: \.sayName) { v in Text(v.label).tag(v.sayName) }
-                    Divider()
-                    ForEach(DuckVoices.classic, id: \.sayName) { v in Text(v.label).tag(v.sayName) }
-                    Divider()
-                    ForEach(DuckVoices.specialFX, id: \.sayName) { v in Text(v.label).tag(v.sayName) }
-                    Divider()
-                    ForEach(DuckVoices.british, id: \.sayName) { v in Text(v.label).tag(v.sayName) }
                 }
                 .onChange(of: selectedVoice) {
                     speechService.ttsVoice = selectedVoice
-                    if selectedVoice == DuckVoices.wildcardSayName {
-                        speechService.setVoiceTransient(DuckVoices.wildcardDefault.sayName)
-                        speechService.scheduleSpeech(
-                            "Wildcard mode.",
-                            kind: .preview,
-                            lane: .manual,
-                            scopeID: "voice-preview",
-                            policy: .latestWins,
-                            interruptibility: .freelyInterruptible,
-                            skipChirpWait: true
-                        )
-                    } else if selectedVoice == DuckVoices.silentSayName {
+                    if selectedVoice == DuckVoices.silentSayName {
                         speechService.scheduleSpeech(
                             "Silent mode. Speech bubbles only.",
                             kind: .preview,
@@ -341,9 +322,8 @@ private struct BehaviorPane: View {
                             interruptibility: .freelyInterruptible
                         )
                     } else {
-                        let voice = DuckVoices.all.first { $0.sayName == selectedVoice }
                         speechService.scheduleSpeech(
-                            voice?.preview ?? "This is how I sound.",
+                            "Kokoro voice active.",
                             kind: .preview,
                             lane: .manual,
                             scopeID: "voice-preview",

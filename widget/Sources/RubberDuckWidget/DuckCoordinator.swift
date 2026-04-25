@@ -101,39 +101,13 @@ class DuckCoordinator: ObservableObject {
             textToSpeak = ""  // unreachable — early return above; kept for exhaustive switch
         }
         if !textToSpeak.isEmpty {
-            // Wildcard mode: AI-picked voice per utterance (fall back to Superstar if no key)
-            if speechService.isWildcardMode {
-                let voiceKey = evalService.scores?.voice
-                var picked = voiceKey.map { DuckVoices.wildcardVoice(for: $0) } ?? DuckVoices.wildcardDefault
-
-                // Slow voices (musical/effect-heavy) sound terrible on long text.
-                // Swap to Superstar if text exceeds roughly one sentence.
-                if textToSpeak.count > DuckVoices.slowVoiceCharacterLimit,
-                   let wk = voiceKey.flatMap({ DuckVoices.WildcardKey(rawValue: $0) }),
-                   DuckVoices.slowWildcardKeys.contains(wk) {
-                    DuckLog.log("[wildcard] \(wk.rawValue) too slow for \(textToSpeak.count) chars, falling back to superstar")
-                    picked = DuckVoices.wildcardDefault
-                }
-
-                speechService.setVoiceTransient(picked.sayName)
-                speechService.scheduleSpeech(
-                    textToSpeak,
-                    kind: .reaction,
-                    lane: .ambient,
-                    policy: .dropIfBusy,
-                    interruptibility: .freelyInterruptible
-                )
-                // Reset to default voice so permissions/greetings don't inherit the wildcard pick
-                speechService.setVoiceTransient(DuckVoices.wildcardDefault.sayName)
-            } else {
-                speechService.scheduleSpeech(
-                    textToSpeak,
-                    kind: .reaction,
-                    lane: .ambient,
-                    policy: .dropIfBusy,
-                    interruptibility: .freelyInterruptible
-                )
-            }
+            speechService.scheduleSpeech(
+                textToSpeak,
+                kind: .reaction,
+                lane: .ambient,
+                policy: .dropIfBusy,
+                interruptibility: .freelyInterruptible
+            )
         }
     }
 

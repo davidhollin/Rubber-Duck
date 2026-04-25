@@ -22,6 +22,7 @@ struct RubberDuckWidgetApp: App {
     @StateObject private var speechService = SpeechService()
     @StateObject private var serialManager = SerialManager()
     @StateObject private var coordinator: DuckCoordinator
+    @StateObject private var kokoroManager = KokoroManager()
 
     /// Held strongly so the menu bar icon stays alive.
     private static var statusBarManager: StatusBarManager?
@@ -35,11 +36,13 @@ struct RubberDuckWidgetApp: App {
         let eval = EvalService(transport: localTransport)
         let speech = SpeechService()
         let serial = SerialManager()
+        let kokoro = KokoroManager()
 
         _duckServer = StateObject(wrappedValue: server)
         _evalService = StateObject(wrappedValue: eval)
         _speechService = StateObject(wrappedValue: speech)
         _serialManager = StateObject(wrappedValue: serial)
+        _kokoroManager = StateObject(wrappedValue: kokoro)
         let coord = DuckCoordinator(
             evalService: eval,
             speechService: speech,
@@ -52,7 +55,8 @@ struct RubberDuckWidgetApp: App {
         Task { @MainActor in
             RubberDuckWidgetApp.wireServicesOnce(
                 server: server, eval: eval, speech: speech,
-                serial: serial, coordinator: coord
+                serial: serial, coordinator: coord,
+                kokoro: kokoro
             )
         }
     }
@@ -191,10 +195,15 @@ struct RubberDuckWidgetApp: App {
     @MainActor
     static func wireServicesOnce(
         server: DuckServer, eval: EvalService, speech: SpeechService,
-        serial: SerialManager, coordinator: DuckCoordinator
+        serial: SerialManager, coordinator: DuckCoordinator,
+        kokoro: KokoroManager
     ) {
         // Wire services only once
         guard statusBarManager == nil else { return }
+
+        // Start Kokoro TTS sidecar and wire to SpeechService
+        speech.setKokoroManager(kokoro)
+        kokoro.start()
 
         // If Foundation Models isn't available, guide the user based on the reason.
         if !server.foundationModelsAvailable {
@@ -387,13 +396,15 @@ struct RubberDuckWidgetApp: App {
         // Store service refs so AppDelegate can turn off the companion
         AppDelegate.speechService = speech
         AppDelegate.coordinator = coordinator
+        AppDelegate.kokoroManager = kokoro
 
         // Menu bar status item (🦆) — settings live here instead of right-click menu
         statusBarManager = StatusBarManager(
             speechService: speech,
             coordinator: coordinator,
             serialManager: serial,
-            duckServer: server
+            duckServer: server,
+            kokoroManager: kokoro
         )
 
         // Update checker — polls GitHub Releases API
@@ -531,6 +542,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Service references for turn on/off. Set during wireServices().
     static var speechService: SpeechService?
     static var coordinator: DuckCoordinator?
+    static var kokoroManager: KokoroManager?
     /// Stored so non-SwiftUI code can open named windows.
     static var openWindow: ((String) -> Void)?
     /// Update checker — accessible from About pane for force-check on appear.
@@ -689,6 +701,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Stop owned TTS sessions cleanly before shutdown.
         Task { @MainActor in
             Self.speechService?.stopSpeaking(reason: .shutdown)
+        }
+        // Stop Kokoro sidecar
+        Task { @MainActor in
+            Self.kokoroManager?.stop()
         }
         // Clean up port file so hooks don't try a stale port
         DuckConfig.removePortFile()

@@ -346,11 +346,46 @@ enum DuckConfig {
 
     // MARK: - TTS
 
-    /// Voice for macOS `say` command.
+    /// Voice for macOS `say` command (legacy fallback).
     /// Override: DUCK_VOICE=Samantha
     static let ttsVoice: String = {
         ProcessInfo.processInfo.environment["DUCK_VOICE"] ?? "Boing"
     }()
+
+    // MARK: - Kokoro TTS
+
+    /// Path to the Python venv containing the `kokoro` package.
+    /// Override: KOKORO_VENV_PATH=/path/to/venv
+    static var kokoroVenvPath: String {
+        get {
+            if let env = ProcessInfo.processInfo.environment["KOKORO_VENV_PATH"], !env.isEmpty {
+                return env
+            }
+            if let saved = UserDefaults.standard.string(forKey: "kokoro_venv_path"), !saved.isEmpty {
+                return saved
+            }
+            return FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent(".venvs/kokoro311").path
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "kokoro_venv_path") }
+    }
+
+    /// Kokoro voice name (speaker embedding).
+    static var kokoroVoice: String {
+        get { ProcessInfo.processInfo.environment["KOKORO_VOICE"] ?? "af_heart" }
+    }
+
+    /// Kokoro speech speed multiplier.
+    static var kokoroSpeed: Float {
+        get {
+            if let env = ProcessInfo.processInfo.environment["KOKORO_SPEED"],
+               let val = Float(env) { return val }
+            return 1.0
+        }
+    }
+
+    /// Port file for the Kokoro sidecar server.
+    static let kokoroPortFile: URL = storageDir.appendingPathComponent("kokoro-port")
 
     /// Master volume (0.0–1.0). Controls TTS output and firmware chirp level.
     static var volume: Float {
