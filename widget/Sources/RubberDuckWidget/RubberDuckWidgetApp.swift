@@ -359,7 +359,11 @@ struct RubberDuckWidgetApp: App {
             speech?.handleSerialDeviceChange()
             if serial?.isConnected == true {
                 AppDelegate.turnOn()
-                AppDelegate.hideWidget()
+                // Delay hide to let SwiftUI finish initial layout — immediate
+                // orderOut crashes popovers mid-setup on fast device detection.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                    AppDelegate.hideWidget()
+                }
                 // Send persisted volume to firmware on connect
                 serial?.sendCommand(String(format: "VOL,%.2f", DuckConfig.volume))
             } else {
