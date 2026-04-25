@@ -114,7 +114,7 @@ class SpeechService: ObservableObject {
 
     // Config
     var wakeWord: String = "ducky" { didSet { wakeWordProcessor.wakeWord = wakeWord } }
-    @Published var ttsVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.silentSayName {
+    @Published var ttsVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? "kokoro" {
         didSet {
             UserDefaults.standard.set(ttsVoice, forKey: "duck_tts_voice")
         }
@@ -312,13 +312,13 @@ class SpeechService: ObservableObject {
             selectedMicName = serialTransport?.displayName ?? "Duck, Duck, Duck"
         case .teensy:
             activeSTT = stt
-            activeTTS = kokoroTTS ?? tts
+            if let kokoro = kokoroTTS { activeTTS = kokoro }
             if let device = AudioDeviceDiscovery.findDuckDevice() {
                 selectedMicName = device.name
             }
         case .local:
             activeSTT = stt
-            activeTTS = kokoroTTS ?? tts
+            if let kokoro = kokoroTTS { activeTTS = kokoro }
             selectMicrophone()
         }
 

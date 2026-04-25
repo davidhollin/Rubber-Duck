@@ -263,7 +263,7 @@ private struct BehaviorPane: View {
     @EnvironmentObject var coordinator: DuckCoordinator
 
     @State private var selectedMode: DuckMode = DuckConfig.duckMode
-    @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? DuckVoices.silentSayName
+    @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? "kokoro"
     @State private var volume: Float = DuckConfig.volume
     @State private var selectedMic: String = ""
     @State private var availableMics: [(index: Int, name: String)] = []
