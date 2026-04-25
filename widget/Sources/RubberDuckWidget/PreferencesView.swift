@@ -262,6 +262,7 @@ private struct BehaviorPane: View {
     @EnvironmentObject var speechService: SpeechService
     @EnvironmentObject var coordinator: DuckCoordinator
 
+    @State private var userName: String = DuckConfig.userName
     @State private var selectedMode: DuckMode = DuckConfig.duckMode
     @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? "kokoro"
     @State private var volume: Float = DuckConfig.volume
@@ -272,6 +273,15 @@ private struct BehaviorPane: View {
 
     var body: some View {
         Form {
+            // --- Your Name ---
+            Section("Your Name") {
+                TextField("Name", text: $userName, prompt: Text("Enter your name"))
+                    .textFieldStyle(.roundedBorder)
+                    .onChange(of: userName) {
+                        DuckConfig.userName = userName
+                    }
+            }
+
             // --- Mode ---
             Section("Mode") {
                 ForEach(DuckMode.allCases, id: \.rawValue) { mode in

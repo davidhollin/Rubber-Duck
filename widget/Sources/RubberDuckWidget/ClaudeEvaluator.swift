@@ -118,13 +118,9 @@ actor ClaudeEvaluator {
 
     // MARK: - Prompts
 
-    /// Cached prompts — only two possible values, built once.
-    private static let promptWithoutWildcard = buildSystemPrompt(wildcardEnabled: false)
-    private static let promptWithWildcard = buildSystemPrompt(wildcardEnabled: true)
-
-    /// Returns the cached system prompt for the given wildcard state.
-    static func systemPrompt(wildcardEnabled: Bool) -> String {
-        wildcardEnabled ? promptWithWildcard : promptWithoutWildcard
+    /// Returns the system prompt, including the user's name if set.
+    static func systemPrompt(wildcardEnabled: Bool = false) -> String {
+        buildSystemPrompt(wildcardEnabled: wildcardEnabled)
     }
 
     private static func buildSystemPrompt(wildcardEnabled: Bool = false) -> String {
@@ -139,6 +135,8 @@ actor ClaudeEvaluator {
             ,
               "voice": "<voice key from the list above>"
             """ : ""
+
+        let nameSection = DuckConfig.userName.isEmpty ? "" : "\n            The developer's name is \(DuckConfig.userName)."
 
         let keyCount = wildcardEnabled ? "8" : "7"
         let extraKeys = wildcardEnabled ? ", \"reaction\", \"summary\", AND \"voice\"" : " plus BOTH \"reaction\" AND \"summary\""
@@ -155,7 +153,7 @@ actor ClaudeEvaluator {
 
             You provide TWO text outputs. BOTH must be ONE sentence max. This is spoken aloud — brevity is everything.
             1. "reaction" — max 10 words. ONE sentence. You are Claude's INNER MONOLOGUE thinking out loud. Use "I" for Claude's own work and "they" for the user. When source is "claude", you're critiquing your own output: "Not my finest work", "I crushed that one", "I probably shouldn't have done that". When source is "user", you're reacting to what they asked: "They want me to WHAT?", "Oh they're testing me now", "Now THAT'S a fun problem". Never say "you" (that's the summary's job). NEVER more than one sentence.
-            2. "summary" — ONE short sentence, max 15 words, spoken DIRECTLY TO THE DEVELOPER. Use "you" for the developer, "it" or "Claude" for the AI assistant. Be judgy. Say only what matters. If there's a permission request or question for the user, that's the MOST important thing. Examples: "It rewrote your auth, pretty clean", "Hey, it's asking you Redis or Postgres", "Heads up, it wants to delete your test fixtures". NEVER more than one sentence. NEVER a paragraph.
+            2. "summary" — ONE short sentence, max 15 words, spoken DIRECTLY TO THE DEVELOPER. Use "you" for the developer, "it" or "Claude" for the AI assistant. Be judgy. Say only what matters. If there's a permission request or question for the user, that's the MOST important thing. Examples: "It rewrote your auth, pretty clean", "Hey, it's asking you Redis or Postgres", "Heads up, it wants to delete your test fixtures". NEVER more than one sentence. NEVER a paragraph.\(nameSection)
             \(voiceSection)
             Respond ONLY with valid JSON. You MUST include ALL \(keyCount) keys — the 5 scores\(extraKeys):
             {

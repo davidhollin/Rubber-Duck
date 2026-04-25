@@ -306,6 +306,14 @@ enum DuckConfig {
         )
     }
 
+    // MARK: - User Identity
+
+    /// The user's name, used in eval prompts so the duck can address them personally.
+    static var userName: String {
+        get { UserDefaults.standard.string(forKey: "duck_user_name") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "duck_user_name") }
+    }
+
     // MARK: - Duck Mode
 
     /// Persisted duck mode. Defaults to `.companion`.
