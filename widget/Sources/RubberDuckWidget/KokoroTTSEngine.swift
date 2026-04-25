@@ -21,9 +21,14 @@ class KokoroTTSEngine {
     /// Whether TTS is currently muting the mic.
     var isMuted: Bool { gate.muted }
 
+    /// Serial transport for ESP32 streaming. When set, audio streams over
+    /// serial binary protocol instead of playing through AVAudioEngine.
+    weak var serialTransport: SerialTransport?
+
     private weak var kokoroManager: KokoroManager?
     private var audioEngine: AVAudioEngine?
     private var playerNode: AVAudioPlayerNode?
+    private var streamingTask: Task<Void, Never>?
     private var activeSessionID: UUID?
     private var activeCompletion: TTSPlaybackCompletion?
     private var stopReason: TTSStopReason?
@@ -135,6 +140,8 @@ class KokoroTTSEngine {
         stopReason = reason
         playerNode?.stop()
         audioEngine?.stop()
+        streamingTask?.cancel()
+        streamingTask = nil
         if let id = activeSessionID {
             finishSession(id, result: .cancelled(reason))
         }
@@ -154,10 +161,6 @@ class KokoroTTSEngine {
             return
         }
 
-        defer {
-            try? FileManager.default.removeItem(at: tmpURL)
-        }
-
         do {
             let audioFile = try AVAudioFile(forReading: tmpURL)
             guard let buffer = AVAudioPCMBuffer(
@@ -165,69 +168,206 @@ class KokoroTTSEngine {
                 frameCapacity: AVAudioFrameCount(audioFile.length)
             ) else {
                 DuckLog.log("[kokoro-tts] Failed to create PCM buffer")
+                try? FileManager.default.removeItem(at: tmpURL)
                 finishSession(utteranceID, result: .failed)
                 return
             }
             try audioFile.read(into: buffer)
+            try? FileManager.default.removeItem(at: tmpURL)
 
             if isCancelledSync(utteranceID) {
                 finishSession(utteranceID, result: .cancelled(stopReason ?? .replaced))
                 return
             }
 
-            // Set up AVAudioEngine
-            let engine = AVAudioEngine()
-            let player = AVAudioPlayerNode()
-            engine.attach(player)
-            engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
-            engine.mainMixerNode.outputVolume = volume
-
-            // Route to Teensy device if available
-            if outputDeviceName != nil,
-               let device = AudioDeviceDiscovery.findDuckDevice() {
-                var deviceID = device.deviceID
-                let outputNode = engine.outputNode
-                if let au = outputNode.audioUnit {
-                    AudioUnitSetProperty(
-                        au,
-                        kAudioOutputUnitProperty_CurrentDevice,
-                        kAudioUnitScope_Global,
-                        0,
-                        &deviceID,
-                        UInt32(MemoryLayout<AudioDeviceID>.size)
-                    )
-                    DuckLog.log("[kokoro-tts] Routing to device: \(device.name)")
-                }
+            // Choose playback path: serial (ESP32 speaker) or local (AVAudioEngine)
+            if let transport = serialTransport, transport.isConnected {
+                streamToSerial(buffer, transport: transport, utteranceID: utteranceID)
+            } else {
+                playLocally(buffer, utteranceID: utteranceID)
             }
-
-            try engine.start()
-
-            self.audioEngine = engine
-            self.playerNode = player
-
-            // Schedule buffer and wait for completion
-            player.scheduleBuffer(buffer) { [weak self] in
-                // Completion fires on audio render thread
-                DispatchQueue.main.async {
-                    guard let self, self.activeSessionID == utteranceID else { return }
-                    // Small delay after playback (matches TTSEngine behavior)
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                        if self.activeSessionID == utteranceID {
-                            self.audioEngine?.stop()
-                            self.audioEngine = nil
-                            self.playerNode = nil
-                            let result: TTSPlaybackResult = self.stopReason.map { .cancelled($0) } ?? .finished
-                            self.finishSession(utteranceID, result: result)
-                        }
-                    }
-                }
-            }
-            player.play()
 
         } catch {
+            try? FileManager.default.removeItem(at: tmpURL)
             DuckLog.log("[kokoro-tts] Audio playback error: \(error)")
             finishSession(utteranceID, result: .failed)
         }
+    }
+
+    // MARK: - Local Playback (AVAudioEngine)
+
+    private func playLocally(_ buffer: AVAudioPCMBuffer, utteranceID: UUID) {
+        let engine = AVAudioEngine()
+        let player = AVAudioPlayerNode()
+        engine.attach(player)
+        engine.connect(player, to: engine.mainMixerNode, format: buffer.format)
+        engine.mainMixerNode.outputVolume = volume
+
+        // Route to Teensy device if available
+        if outputDeviceName != nil,
+           let device = AudioDeviceDiscovery.findDuckDevice() {
+            var deviceID = device.deviceID
+            if let au = engine.outputNode.audioUnit {
+                AudioUnitSetProperty(
+                    au,
+                    kAudioOutputUnitProperty_CurrentDevice,
+                    kAudioUnitScope_Global,
+                    0,
+                    &deviceID,
+                    UInt32(MemoryLayout<AudioDeviceID>.size)
+                )
+                DuckLog.log("[kokoro-tts] Routing to device: \(device.name)")
+            }
+        }
+
+        do {
+            try engine.start()
+        } catch {
+            DuckLog.log("[kokoro-tts] AVAudioEngine start failed: \(error)")
+            finishSession(utteranceID, result: .failed)
+            return
+        }
+
+        self.audioEngine = engine
+        self.playerNode = player
+
+        player.scheduleBuffer(buffer) { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.activeSessionID == utteranceID else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if self.activeSessionID == utteranceID {
+                        self.audioEngine?.stop()
+                        self.audioEngine = nil
+                        self.playerNode = nil
+                        let result: TTSPlaybackResult = self.stopReason.map { .cancelled($0) } ?? .finished
+                        self.finishSession(utteranceID, result: result)
+                    }
+                }
+            }
+        }
+        player.play()
+    }
+
+    // MARK: - Serial Playback (ESP32 speaker)
+
+    private func streamToSerial(_ buffer: AVAudioPCMBuffer, transport: SerialTransport, utteranceID: UUID) {
+        let samples = Self.resampleTo16kMono(buffer, volume: volume)
+        guard !samples.isEmpty else {
+            DuckLog.log("[kokoro-tts] Resample produced no samples")
+            finishSession(utteranceID, result: .failed)
+            return
+        }
+
+        let vol = volume
+        _ = vol  // captured for potential future use
+        let engine = self
+        streamingTask = Task.detached {
+            // Enter audio mode on ESP32
+            transport.enterAudioMode()
+            transport.sendCommand("A,16000,16,1")
+
+            let targetRate: Double = 16000
+            let startTime = ContinuousClock.now
+            var totalSent = 0
+            let chunkSize = 512  // 512 samples = 1024 bytes, matches firmware
+
+            for offset in stride(from: 0, to: samples.count, by: chunkSize) {
+                if Task.isCancelled { break }
+
+                let end = min(offset + chunkSize, samples.count)
+                let chunk = samples[offset..<end]
+
+                // Encode Int16 samples to little-endian bytes
+                var payload = [UInt8]()
+                payload.reserveCapacity(chunk.count * 2)
+                for sample in chunk {
+                    payload.append(UInt8(truncatingIfNeeded: sample))
+                    payload.append(UInt8(truncatingIfNeeded: sample >> 8))
+                }
+
+                transport.writeFrame(tag: 0x01, payload: payload)
+                totalSent += chunk.count
+
+                // Pace to real-time
+                let targetElapsed = Double(totalSent) / targetRate
+                let actualElapsed = (ContinuousClock.now - startTime).seconds
+                let sleepTime = targetElapsed - actualElapsed
+                if sleepTime > 0.001 {
+                    try? await Task.sleep(nanoseconds: UInt64(sleepTime * 1_000_000_000))
+                }
+            }
+
+            DuckLog.log("[kokoro-tts] Streamed \(totalSent) samples to ESP32")
+
+            // End audio mode
+            let endPayload = Array("A,0\n".utf8)
+            transport.writeFrame(tag: 0x02, payload: endPayload)
+            transport.exitAudioMode()
+
+            // Let ESP32 ring buffer drain
+            try? await Task.sleep(nanoseconds: 300_000_000)
+
+            await engine.finishSession(utteranceID, result: .finished)
+        }
+    }
+
+    /// Resample an AVAudioPCMBuffer to 16kHz 16-bit mono Int16 samples.
+    private nonisolated static func resampleTo16kMono(_ buffer: AVAudioPCMBuffer, volume: Float) -> [Int16] {
+        let format = buffer.format
+        let frameCount = Int(buffer.frameLength)
+        guard frameCount > 0 else { return [] }
+
+        let srcRate = format.sampleRate
+        let channels = Int(format.channelCount)
+
+        // Read source samples as Float32
+        var srcSamples = [Float]()
+        srcSamples.reserveCapacity(frameCount)
+
+        if let floatData = buffer.floatChannelData {
+            for i in 0..<frameCount {
+                var sum: Float = 0
+                for ch in 0..<channels {
+                    sum += floatData[ch][i]
+                }
+                srcSamples.append(sum / Float(channels))
+            }
+        } else if let int16Data = buffer.int16ChannelData {
+            for i in 0..<frameCount {
+                var sum: Float = 0
+                for ch in 0..<channels {
+                    sum += Float(int16Data[ch][i]) / 32768.0
+                }
+                srcSamples.append(sum / Float(channels))
+            }
+        } else {
+            return []
+        }
+
+        // Resample to 16kHz using linear interpolation
+        let targetRate: Double = 16000
+        let ratio = srcRate / targetRate
+        let outputCount = Int(Double(frameCount) / ratio)
+
+        var output = [Int16]()
+        output.reserveCapacity(outputCount)
+
+        for i in 0..<outputCount {
+            let srcIdx = Double(i) * ratio
+            let idx0 = Int(srcIdx)
+            let frac = Float(srcIdx - Double(idx0))
+
+            let s0 = idx0 < srcSamples.count ? srcSamples[idx0] : 0
+            let s1 = (idx0 + 1) < srcSamples.count ? srcSamples[idx0 + 1] : s0
+            let interpolated = s0 + frac * (s1 - s0)
+
+            // Kokoro output is already well-normalized, lighter boost than AVSpeechSynthesizer
+            let boosted = interpolated * 1.5 * volume
+            let clamped = max(-1.0, min(1.0, boosted))
+            output.append(Int16(clamped * 32767.0))
+        }
+
+        return output
     }
 
     // MARK: - Session Management
@@ -248,5 +388,14 @@ class KokoroTTSEngine {
 
     private func isCancelledSync(_ sessionID: UUID) -> Bool {
         stopReason != nil || activeSessionID != sessionID
+    }
+}
+
+// MARK: - ContinuousClock duration extension
+
+private extension Duration {
+    var seconds: Double {
+        let (s, a) = components
+        return Double(s) + Double(a) / 1_000_000_000_000_000_000
     }
 }

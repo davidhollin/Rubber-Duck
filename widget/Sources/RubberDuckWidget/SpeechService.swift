@@ -231,6 +231,9 @@ class SpeechService: ObservableObject {
         sMic.setTTSGate(sTTS.gate)
         self.serialMic = sMic
 
+        // Give Kokoro the serial transport so it can stream to ESP32 speaker
+        kokoroTTS?.serialTransport = transport
+
         log("[speech] Serial audio engines created for ESP32")
     }
 
@@ -242,12 +245,11 @@ class SpeechService: ObservableObject {
         self.kokoroManager = manager
         let kokoro = KokoroTTSEngine(manager: manager)
         kokoro.volume = DuckConfig.volume
+        kokoro.serialTransport = serialTransport
         self.kokoroTTS = kokoro
 
-        // Use Kokoro for local/Teensy paths (ESP32 serial keeps its own engine)
-        if audioPath != .esp32Serial {
-            activeTTS = kokoro
-        }
+        // Use Kokoro for all audio paths
+        activeTTS = kokoro
 
         // Share Kokoro's TTS gate with STT so mic mutes during Kokoro playback
         stt.setTTSGate(kokoro.gate)
