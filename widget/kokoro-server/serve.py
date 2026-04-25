@@ -6,7 +6,7 @@ Managed as a subprocess by the widget — not intended to be run manually.
 
 Endpoints:
     GET  /health  — {"status": "ready"|"loading"|"error", "message": "..."}
-    POST /tts     — JSON {"text": "...", "speed": 1.0} → WAV bytes (24kHz mono)
+    POST /tts     — JSON {"text": "...", "speed": 1.0, "lang": "a", "voice": "af_heart"} → WAV bytes (24kHz mono)
 """
 
 import io
@@ -22,13 +22,15 @@ import soundfile as sf
 
 # --- Global state ---
 
-pipeline = None
+pipelines = {}  # lang_code -> KPipeline (lazy-loaded)
+pipelines_lock = threading.Lock()
 status = "loading"
 status_message = "Loading Kokoro model..."
 status_lock = threading.Lock()
 
-VOICE = os.environ.get("KOKORO_VOICE", "af_heart")
+DEFAULT_VOICE = os.environ.get("KOKORO_VOICE", "af_heart")
 DEFAULT_SPEED = float(os.environ.get("KOKORO_SPEED", "1.0"))
+DEFAULT_LANG = os.environ.get("KOKORO_LANG", "a")
 
 
 def set_status(s, msg=""):
@@ -43,18 +45,32 @@ def get_status():
         return {"status": status, "message": status_message}
 
 
+def get_pipeline(lang_code):
+    """Get or create a KPipeline for the given language code. Thread-safe."""
+    with pipelines_lock:
+        if lang_code in pipelines:
+            return pipelines[lang_code]
+
+    # Load outside the lock (slow operation)
+    from kokoro import KPipeline
+    print(f"[kokoro] Loading pipeline for lang_code='{lang_code}'...", flush=True)
+    p = KPipeline(lang_code=lang_code)
+    with pipelines_lock:
+        pipelines[lang_code] = p
+    print(f"[kokoro] Pipeline '{lang_code}' ready.", flush=True)
+    return p
+
+
 # --- Model loading (runs in background thread) ---
 
 def load_model():
-    global pipeline
     try:
         set_status("loading", "Loading Kokoro model...")
-        print("[kokoro] Loading KPipeline...", flush=True)
-        from kokoro import KPipeline
-        pipeline = KPipeline(lang_code="a")
+        print("[kokoro] Loading default pipeline...", flush=True)
+        p = get_pipeline(DEFAULT_LANG)
         # Warm up with a short utterance to load voice + trigger any downloads
-        print(f"[kokoro] Warming up with voice '{VOICE}'...", flush=True)
-        for _ in pipeline("hello", voice=VOICE, speed=1.0):
+        print(f"[kokoro] Warming up with voice '{DEFAULT_VOICE}'...", flush=True)
+        for _ in p("hello", voice=DEFAULT_VOICE, speed=1.0):
             break
         set_status("ready", "Kokoro ready")
         print("[kokoro] Ready.", flush=True)
@@ -67,7 +83,6 @@ def load_model():
 
 def extract_audio(obj, default_sr=24000):
     """Extract (audio_array, sample_rate) from a Kokoro pipeline yield."""
-    # Object with .audio attribute (KPipeline result)
     if hasattr(obj, "audio"):
         a = getattr(obj, "audio")
         try:
@@ -77,7 +92,6 @@ def extract_audio(obj, default_sr=24000):
                 return arr, int(sr)
         except Exception:
             pass
-    # Tuple: (graphemes, phonemes, audio) or (audio, sr)
     if isinstance(obj, tuple):
         if len(obj) >= 3:
             try:
@@ -93,7 +107,6 @@ def extract_audio(obj, default_sr=24000):
                     return arr, int(obj[1])
             except Exception:
                 pass
-    # Bare array
     try:
         arr = np.asarray(obj, dtype=np.float32).reshape(-1)
         if arr.size > 0:
@@ -103,14 +116,13 @@ def extract_audio(obj, default_sr=24000):
     return None, None
 
 
-def synthesize(text, speed=DEFAULT_SPEED):
+def synthesize(text, voice=DEFAULT_VOICE, speed=DEFAULT_SPEED, lang=DEFAULT_LANG):
     """Synthesize text to WAV bytes. Returns (wav_bytes, sample_rate) or raises."""
-    if pipeline is None:
-        raise RuntimeError("Model not loaded")
+    pipeline = get_pipeline(lang)
 
     chunks = []
     sr = 24000
-    for result in pipeline(text, voice=VOICE, speed=speed):
+    for result in pipeline(text, voice=voice, speed=speed):
         audio, result_sr = extract_audio(result)
         if audio is not None:
             chunks.append(audio)
@@ -129,7 +141,6 @@ def synthesize(text, speed=DEFAULT_SPEED):
 
 class TTSHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        # Suppress default access logging
         pass
 
     def do_GET(self):
@@ -166,12 +177,14 @@ class TTSHandler(BaseHTTPRequestHandler):
             params = json.loads(raw)
             text = params.get("text", "").strip()
             speed = float(params.get("speed", DEFAULT_SPEED))
+            voice = params.get("voice", DEFAULT_VOICE)
+            lang = params.get("lang", DEFAULT_LANG)
 
             if not text:
                 self.send_error(400, "Missing 'text' field")
                 return
 
-            wav_bytes, sr = synthesize(text, speed)
+            wav_bytes, sr = synthesize(text, voice=voice, speed=speed, lang=lang)
 
             self.send_response(200)
             self.send_header("Content-Type", "audio/wav")
@@ -195,22 +208,18 @@ class TTSHandler(BaseHTTPRequestHandler):
 def main():
     port_file = os.environ.get("DUCK_KOKORO_PORT_FILE", "")
 
-    # Start model loading in background
     loader = threading.Thread(target=load_model, daemon=True)
     loader.start()
 
-    # Bind to port 0 (OS-assigned)
     server = ThreadingHTTPServer(("127.0.0.1", 0), TTSHandler)
     port = server.server_address[1]
     print(f"[kokoro] Listening on 127.0.0.1:{port}", flush=True)
 
-    # Write port file so the widget can find us
     if port_file:
         with open(port_file, "w") as f:
             f.write(str(port))
         print(f"[kokoro] Port file: {port_file}", flush=True)
 
-    # Graceful shutdown
     def shutdown(sig, frame):
         print("[kokoro] Shutting down...", flush=True)
         server.shutdown()

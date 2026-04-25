@@ -193,12 +193,13 @@ actor LocalEvaluator {
         // Pass 2: Generate reaction with sentiment context
         let perspective = isUser ? "They (the user)" : "I (the coding assistant)"
         let nameContext = DuckConfig.userName.isEmpty ? "" : " The developer's name is \(DuckConfig.userName) — use it sometimes in the summary."
+        let langContext = ""  // Translation handled by KokoroTTSEngine via Apple Translation
         let reactionPrompt = """
             You are an opinionated coding companion. \
             The overall vibe is \(vibe). Your reaction MUST match this vibe. \
             Speak as: \(perspective). \
             DO NOT comment on typos, spelling, or grammar. ONLY react to substance. \
-            Be opinionated but fair.\(nameContext) \
+            Be opinionated but fair.\(nameContext)\(langContext) \
             CRITICAL: Both reaction and summary must be ONE sentence max. \
             This is spoken aloud — keep it short. Never a paragraph.
             """

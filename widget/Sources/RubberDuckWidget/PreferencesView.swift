@@ -263,6 +263,7 @@ private struct BehaviorPane: View {
     @EnvironmentObject var coordinator: DuckCoordinator
 
     @State private var userName: String = DuckConfig.userName
+    @State private var selectedLanguage: DuckConfig.KokoroLanguage = DuckConfig.kokoroLanguage
     @State private var selectedMode: DuckMode = DuckConfig.duckMode
     @State private var selectedVoice: String = UserDefaults.standard.string(forKey: "duck_tts_voice") ?? "kokoro"
     @State private var volume: Float = DuckConfig.volume
@@ -280,6 +281,27 @@ private struct BehaviorPane: View {
                     .onChange(of: userName) {
                         DuckConfig.userName = userName
                     }
+            }
+
+            // --- Language ---
+            Section("Language") {
+                Picker("Voice Language", selection: $selectedLanguage) {
+                    Text("English").tag(DuckConfig.KokoroLanguage.english)
+                    Text("Japanese").tag(DuckConfig.KokoroLanguage.japanese)
+                }
+                .onChange(of: selectedLanguage) {
+                    DuckConfig.kokoroLanguage = selectedLanguage
+                    let preview = selectedLanguage == .japanese ? "日本語モードです" : "English mode."
+                    speechService.scheduleSpeech(
+                        preview,
+                        kind: .preview,
+                        lane: .manual,
+                        scopeID: "lang-preview",
+                        policy: .latestWins,
+                        interruptibility: .freelyInterruptible,
+                        skipChirpWait: true
+                    )
+                }
             }
 
             // --- Mode ---

@@ -7,6 +7,7 @@
 import AVFoundation
 import CoreAudio
 import Foundation
+import Translation
 
 @MainActor
 class KokoroTTSEngine {
@@ -90,18 +91,40 @@ class KokoroTTSEngine {
         let url = baseURL.appendingPathComponent("tts")
         let speed = DuckConfig.kokoroSpeed
 
+        let lang = DuckConfig.kokoroLangCode
+        let voice = DuckConfig.kokoroVoice
+        let needsTranslation = DuckConfig.kokoroLanguage == .japanese
+
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
 
             do {
+                // Translate to Japanese if needed (Apple on-device Translation)
+                var ttsText = cleaned
+                if needsTranslation {
+                    do {
+                        let session = TranslationSession(
+                            installedSource: Locale.Language(identifier: "en"),
+                            target: Locale.Language(identifier: "ja")
+                        )
+                        let result = try await session.translate(cleaned)
+                        ttsText = result.targetText
+                        DuckLog.log("[kokoro-tts] Translated: \(ttsText)")
+                    } catch {
+                        DuckLog.log("[kokoro-tts] Translation failed, using original: \(error)")
+                    }
+                }
+
                 // Build request
                 var request = URLRequest(url: url)
                 request.httpMethod = "POST"
                 request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.timeoutInterval = 30
                 let body = try JSONSerialization.data(withJSONObject: [
-                    "text": cleaned,
+                    "text": ttsText,
                     "speed": speed,
+                    "voice": voice,
+                    "lang": lang,
                 ] as [String: Any])
                 request.httpBody = body
 

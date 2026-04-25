@@ -378,9 +378,54 @@ enum DuckConfig {
         set { UserDefaults.standard.set(newValue, forKey: "kokoro_venv_path") }
     }
 
-    /// Kokoro voice name (speaker embedding).
+    /// Kokoro language setting.
+    enum KokoroLanguage: String {
+        case english = "en"
+        case japanese = "ja"
+
+        /// Kokoro lang_code for KPipeline.
+        var langCode: String {
+            switch self {
+            case .english: return "a"
+            case .japanese: return "j"
+            }
+        }
+
+        /// Default voice for this language.
+        var defaultVoice: String {
+            switch self {
+            case .english: return "af_heart"
+            case .japanese: return "jf_alpha"
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .english: return "English"
+            case .japanese: return "Japanese"
+            }
+        }
+    }
+
+    static var kokoroLanguage: KokoroLanguage {
+        get {
+            if let raw = UserDefaults.standard.string(forKey: "kokoro_language"),
+               let lang = KokoroLanguage(rawValue: raw) {
+                return lang
+            }
+            return .english
+        }
+        set { UserDefaults.standard.set(newValue.rawValue, forKey: "kokoro_language") }
+    }
+
+    /// Kokoro voice name — derived from language setting.
     static var kokoroVoice: String {
-        get { ProcessInfo.processInfo.environment["KOKORO_VOICE"] ?? "af_heart" }
+        kokoroLanguage.defaultVoice
+    }
+
+    /// Kokoro lang_code for the sidecar — derived from language setting.
+    static var kokoroLangCode: String {
+        kokoroLanguage.langCode
     }
 
     /// Kokoro speech speed multiplier.
